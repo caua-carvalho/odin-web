@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 import {
   blendStates,
   clamp01,
@@ -103,18 +103,18 @@ export const ParticlesOrb = ({
   className,
   ref: forwardedRef,
 }: OrbProps) => {
-  const hostRef = useRef<HTMLDivElement>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null) as MutableRefObject<HTMLDivElement | null>;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const colorRef = useRef({ from: colorFrom, to: colorTo });
-  const drawRef = useRef<((frame: OrbFrame) => void) | null>(null);
+  const drawRef = useRef<((frame: OrbFrame) => void) | null>(null) as MutableRefObject<((frame: OrbFrame) => void) | null>;
 
   const setHostRef = useCallback(
     (node: HTMLDivElement | null) => {
       hostRef.current = node;
       if (typeof forwardedRef === 'function') {
         forwardedRef(node);
-      } else if (forwardedRef) {
-        forwardedRef.current = node;
+      } else if (forwardedRef != null) {
+        (forwardedRef as MutableRefObject<HTMLDivElement | null>).current = node;
       }
     },
     [forwardedRef],
