@@ -8,6 +8,11 @@ build/
 # Vite
 .vite/
 
+# Environment
+.env
+.env.*
+!.env.example
+
 # Local files
 *.local
 
