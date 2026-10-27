@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { type Message } from '../../lib/api'
 import { mergePersistedTools, ToolActivity } from './types'
 import { ToolCard } from './ToolCard'
+import { MarkdownMessage } from './MarkdownMessage'
 import { formatRelativeTime } from '../../lib/utils'
 import { Bot, User, Clock, Copy, Check } from 'lucide-react'
 
@@ -82,10 +83,14 @@ export function MessageBubble({ message }: { message: Message }) {
             </div>
           )}
 
-          {/* Message text content */}
-          <div className="whitespace-pre-wrap font-sans break-words selection:bg-odin-orange-500/30">
-            {message.content}
-          </div>
+          {/* Message text content: Hermes answers arrive as Markdown. */}
+          {isUser ? (
+            <div className="whitespace-pre-wrap font-sans break-words selection:bg-odin-orange-500/30">
+              {message.content}
+            </div>
+          ) : (
+            <MarkdownMessage content={message.content} />
+          )}
 
           {/* Quick copy hover button for assistant responses */}
           {!isUser && message.content && (

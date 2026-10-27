@@ -265,6 +265,27 @@
   }
 }
 
+@layer components {
+  /* Chat markdown: streaming caret anchored to the last rendered block. */
+  .odin-streaming > :last-child::after {
+    content: '▍';
+    margin-left: 2px;
+    color: #ff9a3d;
+    animation: odinCaret 1s steps(1) infinite;
+  }
+}
+
+@keyframes odinCaret {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
 @layer utilities {
   .text-glow-orange {
     text-shadow: 0 0 12px rgba(255, 106, 0, 0.6);

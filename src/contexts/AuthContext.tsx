@@ -44,9 +44,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const logout = async () => {
-    await api.logout()
-    api.clearToken()
-    setUser(null)
+    try {
+      await api.logout()
+    } catch (err) {
+      // A failed logout request must never leave the UI stuck in a logged-in
+      // state with a token the user asked to discard.
+      console.error('Falha ao encerrar sessão no servidor:', err)
+    } finally {
+      api.clearToken()
+      setUser(null)
+    }
   }
 
   return (

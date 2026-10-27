@@ -31,7 +31,13 @@ class ApiClient {
       async (error: AxiosError) => {
         const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
 
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        // Login/refresh 401s mean "bad credentials", not "expired session".
+        // Retrying them through the refresh flow used to reload /login and
+        // wipe the error message the form was about to show.
+        const url = originalRequest?.url || ''
+        const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/refresh')
+
+        if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
           originalRequest._retry = true
 
           try {
@@ -42,7 +48,9 @@ class ApiClient {
             return this.client(originalRequest)
           } catch {
             this.clearToken()
-            window.location.href = '/login'
+            if (window.location.pathname !== '/login') {
+              window.location.href = '/login'
+            }
             return Promise.reject(error)
           }
         }

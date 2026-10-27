@@ -77,33 +77,44 @@ export function HolographicWorkspace({
 }: HolographicWorkspaceProps) {
   const [windows, setWindows] = useState<Record<WindowId, WindowState>>(getDefaultWindows)
   const [activeWindowId, setActiveWindowId] = useState<WindowId | null>('chat')
-  const [maxZIndex, setMaxZIndex] = useState(20)
+  const maxZIndexRef = useRef(20)
 
   // System Core Status states
   const [isChatStreaming, setIsChatStreaming] = useState(false)
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0)
+  // One-shot command handed to ChatPanel by the dock command bar.
+  const [quickPrompt, setQuickPrompt] = useState<{ text: string; id: number } | null>(null)
+  const quickPromptIdRef = useRef(0)
 
-  const chatPanelRef = useRef<{ sendMessage?: (text: string) => void }>({})
+  const handleStreamingChange = useCallback((streaming: boolean) => {
+    setIsChatStreaming(streaming)
+  }, [])
+
+  const handleApprovalsCountChange = useCallback((count: number) => {
+    setPendingApprovalsCount(count)
+  }, [])
+
+  const handleQuickPromptHandled = useCallback((id: number) => {
+    setQuickPrompt((prev) => (prev?.id === id ? null : prev))
+  }, [])
 
   // Apply initial requested open window from route
   useEffect(() => {
     if (initialOpenWindow) {
       setActiveWindowId(initialOpenWindow)
-      setMaxZIndex((curr) => {
-        const next = curr + 1
-        setWindows((prev) => {
-          const target = prev[initialOpenWindow]
-          return {
-            ...prev,
-            [initialOpenWindow]: {
-              ...target,
-              isOpen: true,
-              isMinimized: false,
-              zIndex: next,
-            },
-          }
-        })
-        return next
+      maxZIndexRef.current += 1
+      const next = maxZIndexRef.current
+      setWindows((prev) => {
+        const target = prev[initialOpenWindow]
+        return {
+          ...prev,
+          [initialOpenWindow]: {
+            ...target,
+            isOpen: true,
+            isMinimized: false,
+            zIndex: next,
+          },
+        }
       })
     }
   }, [initialOpenWindow])
@@ -111,17 +122,15 @@ export function HolographicWorkspace({
   const bringToFront = useCallback(
     (id: WindowId) => {
       setActiveWindowId(id)
-      setMaxZIndex((curr) => {
-        const next = curr + 1
-        setWindows((prev) => ({
-          ...prev,
-          [id]: {
-            ...prev[id],
-            zIndex: next,
-          },
-        }))
-        return next
-      })
+      maxZIndexRef.current += 1
+      const next = maxZIndexRef.current
+      setWindows((prev) => ({
+        ...prev,
+        [id]: {
+          ...prev[id],
+          zIndex: next,
+        },
+      }))
     },
     []
   )
@@ -271,24 +280,22 @@ export function HolographicWorkspace({
       ? `${pendingApprovalsCount} autorização(ões) de segurança requerida(s)`
       : 'Sistemas neurais em prontidão'
 
-  const handleQuickCommand = (promptText: string) => {
-    // Open chat and focus
-    setWindows((prev) => ({
-      ...prev,
-      chat: {
-        ...prev.chat,
-        isOpen: true,
-        isMinimized: false,
-        zIndex: maxZIndex + 1,
-      },
-    }))
-    bringToFront('chat')
+  const handleQuickCommand = useCallback(
+    (promptText: string) => {
+      // Open/focus the chat window, then hand the command to the panel. The
+      // panel may only mount on the next render, which is why the request is
+      // passed as state instead of through an imperative ref.
+      setWindows((prev) => ({
+        ...prev,
+        chat: { ...prev.chat, isOpen: true, isMinimized: false },
+      }))
+      bringToFront('chat')
 
-    // If chat has a direct send callback or trigger, it will take it
-    if (chatPanelRef.current.sendMessage) {
-      chatPanelRef.current.sendMessage(promptText)
-    }
-  }
+      quickPromptIdRef.current += 1
+      setQuickPrompt({ text: promptText, id: quickPromptIdRef.current })
+    },
+    [bringToFront]
+  )
 
   // Count how many floating windows are currently visible and not minimized
   const visibleCount = (Object.keys(windows) as WindowId[]).filter(
@@ -315,7 +322,8 @@ export function HolographicWorkspace({
         <AgentOrb
           state={computedCoreState}
           label={coreStatusText}
-          size={328}
+          size={250}
+          density={0.3}
         />
       </div>
 
@@ -340,7 +348,9 @@ export function HolographicWorkspace({
       >
         <ChatPanel
           initialConversationId={initialConversationId}
-          onStreamingChange={(streaming) => setIsChatStreaming(streaming)}
+          onStreamingChange={handleStreamingChange}
+          quickPrompt={quickPrompt}
+          onQuickPromptHandled={handleQuickPromptHandled}
         />
       </FloatingCard>
 
@@ -393,7 +403,7 @@ export function HolographicWorkspace({
         onResize={(sz) => handleResize('activity', sz)}
       >
         <ActivityPanel
-          onApprovalsCountChange={(count) => setPendingApprovalsCount(count)}
+          onApprovalsCountChange={handleApprovalsCountChange}
         />
       </FloatingCard>
 
@@ -427,6 +437,7 @@ export function HolographicWorkspace({
         onApplyLayout={applyLayout}
         onQuickCommand={handleQuickCommand}
         isChatStreaming={isChatStreaming}
+        isDispatching={isChatStreaming}
         hasPendingApprovals={pendingApprovalsCount > 0}
       />
     </div>

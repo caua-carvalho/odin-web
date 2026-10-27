@@ -22,12 +22,18 @@ interface ChatPanelProps {
   initialConversationId?: string | null
   onConversationChange?: (id: string) => void
   onStreamingChange?: (isStreaming: boolean) => void
+  /** Command dispatched by the workspace dock. `id` de-duplicates re-sends. */
+  quickPrompt?: { text: string; id: number } | null
+  /** Called once a quick prompt was consumed, so the parent can clear it. */
+  onQuickPromptHandled?: (id: number) => void
 }
 
 export function ChatPanel({
   initialConversationId,
   onConversationChange,
   onStreamingChange,
+  quickPrompt,
+  onQuickPromptHandled,
 }: ChatPanelProps) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null)
@@ -38,6 +44,14 @@ export function ChatPanel({
   const [queuedRuns] = useState<Run[]>([])
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const currentConversationIdRef = useRef<string | null>(null)
+
+  // Keep the latest conversation id available to stable callbacks, so the
+  // stream callbacks do not get recreated (and re-trigger the init effect)
+  // every time the user selects another conversation.
+  useEffect(() => {
+    currentConversationIdRef.current = currentConversation?.id ?? null
+  }, [currentConversation?.id])
 
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({
@@ -63,7 +77,13 @@ export function ChatPanel({
       const data = await api.listMessages(convId, { page_size: 100 })
       const items: Message[] = Array.isArray(data) ? data : data?.items || []
       items.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-      setMessages(items)
+      // The backend creates an empty assistant placeholder as soon as a run
+      // starts. While streaming, LiveAssistant already renders that turn.
+      setMessages(
+        items.filter(
+          (m) => !(m.role === 'assistant' && !m.content.trim() && !(m.tool_calls?.length))
+        )
+      )
     } catch (err) {
       console.error('Falha ao carregar mensagens:', err)
     } finally {
@@ -73,22 +93,24 @@ export function ChatPanel({
 
   const handleRunFinished = useCallback(
     async (_runId: string) => {
-      if (currentConversation?.id) {
-        await loadMessages(currentConversation.id)
+      const convId = currentConversationIdRef.current
+      if (convId) {
+        await loadMessages(convId)
         loadConversations()
       }
     },
-    [currentConversation?.id, loadMessages, loadConversations]
+    [loadMessages, loadConversations]
   )
 
   const handleTitleUpdate = useCallback(
     (newTitle: string) => {
+      const convId = currentConversationIdRef.current
       setCurrentConversation((prev) => (prev ? { ...prev, title: newTitle } : prev))
       setConversations((prev) =>
-        prev.map((c) => (c.id === currentConversation?.id ? { ...c, title: newTitle } : c))
+        prev.map((c) => (c.id === convId ? { ...c, title: newTitle } : c))
       )
     },
-    [currentConversation?.id]
+    []
   )
 
   const {
@@ -106,7 +128,15 @@ export function ChatPanel({
     onTitleUpdate: handleTitleUpdate,
   })
 
-  const isLiveRunning = live.phase !== 'idle' && live.phase !== 'done'
+  const isLiveRunning =
+    live.phase === 'connecting' ||
+    live.phase === 'streaming' ||
+    live.phase === 'waiting_approval' ||
+    live.phase === 'stopping' ||
+    live.phase === 'queued'
+  // A failed send/run still has an error worth surfacing, but it must not
+  // leave the composer stuck on the "Parar" button.
+  const showLiveAssistant = isLiveRunning || live.phase === 'error'
 
   useEffect(() => {
     if (onStreamingChange) {
@@ -117,20 +147,23 @@ export function ChatPanel({
   const selectConversation = useCallback(
     async (convId: string) => {
       const found = conversations.find((c) => c.id === convId)
-      if (found) {
-        setCurrentConversation(found)
-        if (onConversationChange) onConversationChange(convId)
-        await loadMessages(convId)
-        try {
-          const activeRun = await api.getActiveRun(convId)
-          if (activeRun && isActiveStatus(activeRun.status)) {
-            attachToRun(activeRun.id, activeRun.events?.length || 0)
-          } else {
-            resetLive()
-          }
-        } catch {
+      const conversation = found || (await api.getConversation(convId).catch(() => null))
+      if (!conversation) return
+
+      setCurrentConversation(conversation)
+      if (onConversationChange) onConversationChange(convId)
+      await loadMessages(convId)
+      try {
+        const activeRun = await api.getActiveRun(convId)
+        if (activeRun && isActiveStatus(activeRun.status)) {
+          // Replay the whole bus backlog: the persisted `events` array is not
+          // a sequence number, so using its length skipped/duplicated events.
+          attachToRun(activeRun.id, 0)
+        } else {
           resetLive()
         }
+      } catch {
+        resetLive()
       }
     },
     [conversations, onConversationChange, loadMessages, attachToRun, resetLive]
@@ -147,20 +180,22 @@ export function ChatPanel({
       const targetId = initialConversationId || (convs.length > 0 ? convs[0].id : null)
       if (targetId) {
         const found = convs.find((c) => c.id === targetId)
-        if (found) {
-          setCurrentConversation(found)
+        const conversation = found || (await api.getConversation(targetId).catch(() => null))
+        if (!mounted) return
+        if (conversation) {
+          setCurrentConversation(conversation)
           await loadMessages(targetId)
           try {
             const activeRun = await api.getActiveRun(targetId)
             if (activeRun && isActiveStatus(activeRun.status)) {
-              attachToRun(activeRun.id, activeRun.events?.length || 0)
+              attachToRun(activeRun.id, 0)
             }
           } catch {
             // noop
           }
         }
       }
-      setLoadingInitial(false)
+      if (mounted) setLoadingInitial(false)
     }
 
     init()
@@ -210,9 +245,10 @@ export function ChatPanel({
     let convId = currentConversation?.id
     if (!convId) {
       try {
+        // The run creation endpoint stores the user message itself. Passing
+        // `initial_message` here as well duplicated the first message.
         const created = await api.createConversation({
           title: text.slice(0, 32),
-          initial_message: text,
         })
         convId = created.id
         setConversations((prev) => [created, ...prev])
@@ -248,6 +284,24 @@ export function ChatPanel({
       }))
     }
   }
+
+  // The dock can dispatch a command while this panel is still mounting (or
+  // before it exists at all, when the chat window is closed). Keep the latest
+  // sender in a ref and consume each quick prompt exactly once, after the
+  // initial conversation has loaded.
+  const sendMessageRef = useRef(handleSendMessage)
+  useEffect(() => {
+    sendMessageRef.current = handleSendMessage
+  })
+
+  const lastQuickPromptIdRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!quickPrompt || loadingInitial) return
+    if (lastQuickPromptIdRef.current === quickPrompt.id) return
+    lastQuickPromptIdRef.current = quickPrompt.id
+    void sendMessageRef.current(quickPrompt.text)
+    onQuickPromptHandled?.(quickPrompt.id)
+  }, [quickPrompt, loadingInitial, onQuickPromptHandled])
 
   return (
     <div className="w-full h-full flex flex-col relative overflow-hidden bg-transparent">
@@ -302,7 +356,7 @@ export function ChatPanel({
               <div className="h-full flex items-center justify-center font-mono text-xs text-odin-graphite-500">
                 Sincronizando sessão...
               </div>
-            ) : messages.length === 0 && !isLiveRunning ? (
+            ) : messages.length === 0 && !showLiveAssistant ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-4">
                 <Bot className="w-8 h-8 text-odin-orange-400 mb-2 opacity-80" />
                 <p className="font-mono text-xs text-odin-graphite-300 font-semibold">
@@ -318,7 +372,7 @@ export function ChatPanel({
                   <MessageBubble key={message.id} message={message} />
                 ))}
 
-                {isLiveRunning && (
+                {showLiveAssistant && (
                   <LiveAssistant
                     live={live}
                     pendingApproval={pendingApproval}

@@ -165,6 +165,8 @@ export function useChatStream({ onRunFinished, onTitleUpdate }: UseChatStreamOpt
         case 'run_cancelled': {
           runActiveRef.current = false
           const isError = type === 'run_failed'
+          setIsStopping(false)
+          setPendingApproval(null)
           setLive((prev) => ({
             ...prev,
             phase: isError ? 'error' : 'done',
@@ -179,7 +181,30 @@ export function useChatStream({ onRunFinished, onTitleUpdate }: UseChatStreamOpt
           break
         }
 
+        case 'run_snapshot': {
+          // Sent when the in-memory event bus is gone (server restart or TTL
+          // expired). Without this the UI stayed on "connecting" forever.
+          runActiveRef.current = false
+          const status = String(data.status || '')
+          const isError = status === 'failed' || status === 'cancelled' || status === 'interrupted'
+          setIsStopping(false)
+          setPendingApproval(null)
+          setLive((prev) => ({
+            ...prev,
+            phase: isError ? 'error' : 'done',
+            error: isError ? data.error || 'Execução indisponível' : null,
+            statusText: isError ? 'Falhou' : 'Concluído',
+          }))
+          const snapshottedRunId = activeRunIdRef.current
+          closeStream()
+          if (snapshottedRunId && onRunFinished) {
+            onRunFinished(snapshottedRunId)
+          }
+          break
+        }
+
         case 'error':
+          setIsStopping(false)
           setLive((prev) => ({
             ...prev,
             phase: 'error',
@@ -202,13 +227,13 @@ export function useChatStream({ onRunFinished, onTitleUpdate }: UseChatStreamOpt
       runActiveRef.current = true
       reconnectAttemptRef.current = 0
 
-      setLive((prev) => ({
-        ...prev,
+      setLive({
+        ...emptyLive(),
         runId,
         phase: 'connecting',
-        startedAt: prev.startedAt || Date.now(),
+        startedAt: Date.now(),
         error: null,
-      }))
+      })
       setConnection('connecting')
 
       const connect = () => {
@@ -228,7 +253,16 @@ export function useChatStream({ onRunFinished, onTitleUpdate }: UseChatStreamOpt
             try {
               const runData = await api.getRun(runId)
               if (TERMINAL_STATUSES.includes(runData.status)) {
+                const isError = runData.status === 'failed'
                 runActiveRef.current = false
+                setIsStopping(false)
+                setPendingApproval(null)
+                setLive((prev) => ({
+                  ...prev,
+                  phase: isError ? 'error' : 'done',
+                  error: isError ? runData.error || 'Falha na execução' : null,
+                  statusText: isError ? 'Falhou' : 'Concluído',
+                }))
                 closeStream()
                 if (onRunFinished) onRunFinished(runId)
                 return

@@ -3,6 +3,7 @@ import { LiveState, ApprovalCard, formatElapsed } from './types'
 import { AgentOrb } from '../../components/common/AgentOrb'
 import { ToolCard } from './ToolCard'
 import { ApprovalCardView } from './ApprovalCardView'
+import { MarkdownMessage } from './MarkdownMessage'
 import { type CoreState } from '../../components/core/core.types'
 import {
   Brain,
@@ -139,10 +140,7 @@ export function LiveAssistant({
 
           {/* Streaming Text Output */}
           {live.text ? (
-            <div className="whitespace-pre-wrap text-sm leading-relaxed text-odin-graphite-100 font-sans break-words">
-              {live.text}
-              <span className="inline-block w-1.5 h-4 ml-1 bg-odin-orange-400 animate-pulse align-middle" />
-            </div>
+            <MarkdownMessage content={live.text} streaming />
           ) : !live.reasoning && live.tools.length === 0 ? (
             <div className="flex items-center gap-2 text-xs font-mono text-odin-graphite-400 py-1">
               <Sparkles className="w-3.5 h-3.5 text-odin-orange-400 animate-spin-slow" />

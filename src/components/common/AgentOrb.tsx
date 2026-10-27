@@ -6,6 +6,8 @@ export interface AgentOrbProps {
   size?: number
   className?: string
   label?: string
+  /** Controls the number of dots: count = size * 4 * density (see orb-core `mountOrb`).\nDefault 1 keeps the previous count; lower it to reduce dots.\nEg. 0.7 ~30% fewer dots, 0.5 ~50%.\nThere is a lower bound of 8 dots (`Math.max(8, ...)`). */
+  density?: number
 }
 
 type OrbLookMapping = OrbLook & {
@@ -68,6 +70,7 @@ const STATE_MAPPINGS: Record<CoreState, OrbLookMapping> = {
 export function AgentOrb({
   state = 'idle',
   size = 20,
+  density = 1,
   className = '',
   label,
 }: AgentOrbProps) {
@@ -81,6 +84,7 @@ export function AgentOrb({
       <Orb
         {...(mapping as any)}
         size={size}
+        density={density}
         label={label || `Agent status: ${state}`}
       />
     </div>
