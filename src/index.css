@@ -287,6 +287,10 @@
 }
 
 @layer utilities {
+  .animate-slide-down {
+    animation: slideDown 0.25s ease-out;
+  }
+
   .text-glow-orange {
     text-shadow: 0 0 12px rgba(255, 106, 0, 0.6);
   }

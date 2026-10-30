@@ -5,6 +5,7 @@ import {
   Menu,
   Wifi,
   WifiOff,
+  Package,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { api } from '../lib/api'
@@ -119,6 +120,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
           >
             <LogOut className="w-4 h-4" />
           </button>
+
+          <NavLink to="/skill-vision" className="p-1.5 rounded-lg text-odin-graphite-400 hover:text-odin-orange-400 hover:bg-odin-orange-500/10 border border-transparent hover:border-odin-orange-500/20 transition-colors" aria-label="Visualizar skills">
+            <Package className="w-4 h-4" />
+          </NavLink>
         </div>
       </header>
 

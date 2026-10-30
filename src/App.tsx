@@ -3,6 +3,7 @@ import { useAuth } from './hooks/useAuth'
 import { Layout } from './components/Layout'
 import { LoginPage } from './pages/LoginPage'
 import { HolographicWorkspace } from './components/floating/HolographicWorkspace'
+import { SkillVisionPage } from './pages/SkillVisionPage'
 import { LoadingScreen } from './components/LoadingScreen'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -44,6 +45,7 @@ export function App() {
                 <Route path="/chat/:conversationId" element={<WorkspaceChatRoute />} />
                 <Route path="/knowledge" element={<HolographicWorkspace initialOpenWindow="knowledge" />} />
                 <Route path="/activity" element={<HolographicWorkspace initialOpenWindow="activity" />} />
+                <Route path="/skill-vision" element={<SkillVisionPage />} />
                 <Route path="/system" element={<HolographicWorkspace initialOpenWindow="system" />} />
               </Routes>
             </Layout>
